@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nextcloud
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nc-postgres-pv
+spec:
+  capacity:
+    storage: 8Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: 192.168.56.100
+    path: /srv/nfs/k8s-nextcloud-postgres
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nc-postgres-pvc
+  namespace: nextcloud
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 4Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: nextcloud
+type: Opaque
+stringData:
+  POSTGRES_DB: nextclouddb
+  POSTGRES_USER: nextclouduser
+  POSTGRES_PASSWORD: nextcloudpass
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: nextcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: nc-postgres-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: nextcloud
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
